@@ -4,33 +4,21 @@ use image::ImageReader;
 use std::{env, process, thread};
 use tray_icon::{
     menu::{
-        AboutMetadata, AboutMetadataBuilder, Menu, MenuEvent, MenuId, MenuItem, MenuItemBuilder,
-        PredefinedMenuItem,
+        AboutMetadata, AboutMetadataBuilder, CheckMenuItem, CheckMenuItemBuilder, Menu, MenuEvent,
+        MenuId, MenuItem, MenuItemBuilder, PredefinedMenuItem,
     },
     Icon, TrayIconBuilder,
 };
 use windows::Win32::{Foundation::HWND, UI::WindowsAndMessaging::*};
 
 enum ModeLabel {
-    Circular,
     Previous,
 }
 
 impl ModeLabel {
-    fn as_str(&self) -> String {
-        let prefix = "Previous mode:";
-
+    fn as_str(&self) -> &str {
         match self {
-            ModeLabel::Circular => format!("{} disabled", prefix),
-            ModeLabel::Previous => format!("{} enabled", prefix),
-        }
-    }
-
-    fn get_label(is_enabled: &bool) -> String {
-        if *is_enabled {
-            ModeLabel::Previous.as_str()
-        } else {
-            ModeLabel::Circular.as_str()
+            ModeLabel::Previous => "Previous mode",
         }
     }
 }
@@ -50,59 +38,38 @@ impl ToggleLabel {
 }
 
 enum AutoloadLabel {
-    Enabled,
-    Disabled,
+    Autoload,
 }
 
 impl AutoloadLabel {
-    fn as_str(&self) -> String {
-        let prefix = "Autoload:";
-
+    fn as_str(&self) -> &str {
         match self {
-            AutoloadLabel::Enabled => format!("{} enabled", prefix),
-            AutoloadLabel::Disabled => format!("{} disabled", prefix),
-        }
-    }
-
-    fn get_label() -> String {
-        if is_autoload_enabled() {
-            AutoloadLabel::Enabled.as_str()
-        } else {
-            AutoloadLabel::Disabled.as_str()
+            AutoloadLabel::Autoload => "Autoload",
         }
     }
 }
 
 enum DefaultCapsLockBehaviourLabel {
-    Enabled,
-    Disabled,
+    DefaultCapsLockBehaviour,
 }
 
 impl DefaultCapsLockBehaviourLabel {
-    fn as_str(&self) -> String {
-        let prefix = "Default CapsLock behaviour (Shift+CapsLock):";
-
+    fn as_str(&self) -> &str {
         match self {
-            DefaultCapsLockBehaviourLabel::Enabled => format!("{} enabled", prefix),
-            DefaultCapsLockBehaviourLabel::Disabled => format!("{} disabled", prefix),
-        }
-    }
-
-    fn get_label(is_enabled: &bool) -> String {
-        if *is_enabled {
-            DefaultCapsLockBehaviourLabel::Enabled.as_str()
-        } else {
-            DefaultCapsLockBehaviourLabel::Disabled.as_str()
+            DefaultCapsLockBehaviourLabel::DefaultCapsLockBehaviour => {
+                "Default CapsLock behaviour (Shift+CapsLock)"
+            }
         }
     }
 }
 
 struct MenuItems {
     toggle: MenuItem,
-    prev_mode: MenuItem,
-    autoload: MenuItem,
-    default_capslock_behaviour: MenuItem,
-    separator: PredefinedMenuItem,
+    top_separator: PredefinedMenuItem,
+    prev_mode: CheckMenuItem,
+    default_capslock_behaviour: CheckMenuItem,
+    autoload: CheckMenuItem,
+    bottom_separator: PredefinedMenuItem,
     about: PredefinedMenuItem,
     quit: MenuItem,
 }
@@ -146,22 +113,23 @@ fn get_menu_items() -> MenuItems {
         .text(ToggleLabel::Pause.as_str())
         .enabled(true)
         .build();
-    let menu_i_prev_mode: MenuItem = MenuItemBuilder::new()
+    let top_separator = PredefinedMenuItem::separator();
+    let menu_i_prev_mode: CheckMenuItem = CheckMenuItemBuilder::new()
         .id(MenuId::new("mode"))
-        .text(ModeLabel::get_label(&APP_STATE.is_previous_mode().unwrap()))
+        .text(ModeLabel::Previous.as_str())
+        .checked(APP_STATE.is_previous_mode().unwrap())
         .enabled(true)
         .build();
-    let menu_i_autoload: MenuItem = MenuItemBuilder::new()
-        .id(MenuId::new("autoload"))
-        .text(AutoloadLabel::get_label())
-        .enabled(true)
-        .build();
-
-    let menu_i_default_capslock_behaviour: MenuItem = MenuItemBuilder::new()
+    let menu_i_default_capslock_behaviour: CheckMenuItem = CheckMenuItemBuilder::new()
         .id(MenuId::new("default_capslock_behaviour"))
-        .text(DefaultCapsLockBehaviourLabel::get_label(
-            &APP_STATE.is_default_capslock_behaviour_enabled().unwrap(),
-        ))
+        .text(DefaultCapsLockBehaviourLabel::DefaultCapsLockBehaviour.as_str())
+        .checked(APP_STATE.is_default_capslock_behaviour_enabled().unwrap())
+        .enabled(true)
+        .build();
+    let menu_i_autoload: CheckMenuItem = CheckMenuItemBuilder::new()
+        .id(MenuId::new("autoload"))
+        .text(AutoloadLabel::Autoload.as_str())
+        .checked(is_autoload_enabled())
         .enabled(true)
         .build();
 
@@ -171,16 +139,17 @@ fn get_menu_items() -> MenuItems {
         .enabled(true)
         .build();
 
-    let separator = PredefinedMenuItem::separator();
+    let bottom_separator = PredefinedMenuItem::separator();
 
     let metadata = get_metadata();
     let menu_i_about: PredefinedMenuItem = PredefinedMenuItem::about(Some("About"), Some(metadata));
     let items = MenuItems {
         toggle: menu_i_toggle,
+        top_separator,
         prev_mode: menu_i_prev_mode,
         autoload: menu_i_autoload,
         default_capslock_behaviour: menu_i_default_capslock_behaviour,
-        separator,
+        bottom_separator,
         about: menu_i_about,
         quit: menu_i_quit,
     };
@@ -188,11 +157,11 @@ fn get_menu_items() -> MenuItems {
     items
 }
 
-fn autoload_handler(menu_i: &MenuItem) {
+fn autoload_handler(menu_i: &CheckMenuItem) {
     if is_autoload_enabled() {
         let result = remove_autoload();
         if result {
-            menu_i.set_text(AutoloadLabel::Disabled.as_str());
+            menu_i.set_checked(false);
         }
     } else {
         let is_prev_mode = APP_STATE.is_previous_mode().unwrap_or_else(|e| {
@@ -207,16 +176,15 @@ fn autoload_handler(menu_i: &MenuItem) {
         });
 
         if result {
-            menu_i.set_text(AutoloadLabel::Enabled.as_str());
+            menu_i.set_checked(true);
         }
     }
 }
 
-fn mode_hander(menu_i: &MenuItem) {
+fn mode_hander(menu_i: &CheckMenuItem) {
     match APP_STATE.toggle_previous_mode() {
         Ok(is_prev_mode) => {
-            let text = ModeLabel::get_label(&is_prev_mode);
-            menu_i.set_text(text);
+            menu_i.set_checked(is_prev_mode);
 
             if is_autoload_enabled() {
                 if is_prev_mode {
@@ -255,11 +223,10 @@ fn quit_hander() {
     process::exit(0);
 }
 
-fn default_capslock_behaviour_handler(menu_i: &MenuItem) {
+fn default_capslock_behaviour_handler(menu_i: &CheckMenuItem) {
     match APP_STATE.toggle_default_capslock_behaviour() {
         Ok(is_enabled) => {
-            let text = DefaultCapsLockBehaviourLabel::get_label(&is_enabled);
-            menu_i.set_text(text);
+            menu_i.set_checked(is_enabled);
         }
         Err(err) => {
             eprintln!(
@@ -278,10 +245,11 @@ pub fn create_tray() {
         tray_menu
             .append_items(&[
                 &menu_items.toggle,
+                &menu_items.top_separator,
                 &menu_items.prev_mode,
                 &menu_items.autoload,
                 &menu_items.default_capslock_behaviour,
-                &menu_items.separator,
+                &menu_items.bottom_separator,
                 &menu_items.about,
                 &menu_items.quit,
             ])
