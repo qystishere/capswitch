@@ -16,6 +16,7 @@ pub struct AppState {
     _is_previous_mode: RwLock<bool>,
     _prev_layout: RwLock<Option<HKL>>,
     _keep_lock: RwLock<bool>,
+    _default_capslock_behaviour: RwLock<bool>,
 }
 
 impl AppState {
@@ -25,6 +26,7 @@ impl AppState {
             _is_previous_mode: RwLock::new(args.get(1).map_or(false, |mode| mode == "--previous")),
             _prev_layout: RwLock::new(None),
             _keep_lock: RwLock::new(false),
+            _default_capslock_behaviour: RwLock::new(true),
         }
     }
 
@@ -94,6 +96,30 @@ impl AppState {
         drop(is_previous_mode);
 
         self.is_previous_mode()
+    }
+    fn is_default_capslock_behaviour_enabled(&self) -> Result<bool, String> {
+        let is_enabled = *self
+            ._default_capslock_behaviour
+            .read()
+            .map_err(|e| format!("Failed to read `default_capslock_behaviour`: {}", e))?;
+
+        Ok(is_enabled)
+    }
+
+    fn toggle_default_capslock_behaviour(&self) -> Result<bool, String> {
+        let mut is_enabled = self
+            ._default_capslock_behaviour
+            .write()
+            .map_err(|e| format!("Failed to write `default_capslock_behaviour`: {}", e))?;
+        let mut _keep_lock = self
+            ._keep_lock
+            .write()
+            .map_err(|e| format!("Failed to write `keep_lock`: {}", e))?;
+
+        *is_enabled = !*is_enabled;
+        drop(is_enabled);
+
+        self.is_default_capslock_behaviour_enabled()
     }
 }
 

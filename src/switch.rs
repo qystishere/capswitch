@@ -73,6 +73,32 @@ fn imitate_keyboard_layout_change() {
     }
 }
 
+fn toggle_capslock() {
+    let input = INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: INPUT_0 {
+            ki: KEYBDINPUT {
+                wVk: VIRTUAL_KEY(VK_CAPITAL.0),
+                wScan: 0,
+                dwFlags: KEYEVENTF_EXTENDEDKEY,
+                time: 0,
+                dwExtraInfo: 0,
+            },
+        },
+    };
+
+    let result = unsafe {
+        SendInput(
+            &[input],
+            i32::try_from(mem::size_of::<INPUT>()).expect("Converting sizeof Input Failed"),
+        )
+    };
+
+    if result == 0 {
+        panic!("SendInput failed");
+    }
+}
+
 unsafe extern "system" fn keyboard_hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     match APP_STATE.is_paused() {
         Ok(is_paused) => {
@@ -88,74 +114,68 @@ unsafe extern "system" fn keyboard_hook_proc(code: i32, wparam: WPARAM, lparam: 
 
     if code >= 0 {
         let kb_struct = &*(lparam.0 as *const KBDLLHOOKSTRUCT);
-
         if kb_struct.vkCode == u32::from(VK_CAPITAL.0) {
             if wparam.0 == WM_KEYDOWN as usize {
                 let shift_state = GetAsyncKeyState(i32::from(VK_SHIFT.0));
                 if (shift_state as i16) < 0 {
                     // shift is pressed
-                    let input = INPUT {
-                        r#type: INPUT_KEYBOARD,
-                        Anonymous: INPUT_0 {
-                            ki: KEYBDINPUT {
-                                wVk: VIRTUAL_KEY(VK_CAPITAL.0),
-                                wScan: 0,
-                                dwFlags: KEYEVENTF_EXTENDEDKEY,
-                                time: 0,
-                                dwExtraInfo: 0,
-                            },
-                        },
-                    };
-                    let cb_size = i32::try_from(mem::size_of::<INPUT>());
-                    match cb_size {
-                        Ok(cb_size) => {
-                            SendInput(&[input], cb_size);
-                        }
-                        Err(_) => panic!("SendInput failed"),
-                    }
-                } else {
-                    let curr_layout = get_foreground_layout();
-                    let is_prev_mode = APP_STATE.is_previous_mode().unwrap_or_else(|e| {
-                        eprintln!("Error: {e}");
-                        false
-                    });
-
-                    if !is_prev_mode {
-                        imitate_keyboard_layout_change();
-                    } else {
-                        let previous_layout = APP_STATE.prev_layout().unwrap_or_else(|e| {
-                            eprintln!("Error: {e}");
-                            None
+                    let is_default_behaviour_enabled = APP_STATE
+                        .is_default_capslock_behaviour_enabled()
+                        .unwrap_or_else(|e| {
+                            eprintln!("Error checking default capslock behaviour setting: {}", e);
+                            true
                         });
-                        match previous_layout {
-                            Some(prev_layout) => {
-                                if curr_layout == prev_layout {
-                                    imitate_keyboard_layout_change();
-                                } else {
-                                    let result = change_keyboard_layout(&prev_layout);
-                                    // In case of success
-                                    if result.0 == 0 {
-                                        match APP_STATE.set_prev_layout(Some(curr_layout)) {
-                                            Ok(_) => {}
-                                            Err(err) => {
-                                                eprintln!("Didn't manage to set previous layout to state. Error: {}", err)
-                                            }
+
+                    if is_default_behaviour_enabled {
+                        toggle_capslock();
+                    }
+                }
+
+                let curr_layout = get_foreground_layout();
+                let is_prev_mode = APP_STATE.is_previous_mode().unwrap_or_else(|e| {
+                    eprintln!("Error: {e}");
+                    false
+                });
+
+                if !is_prev_mode {
+                    imitate_keyboard_layout_change();
+                } else {
+                    let previous_layout = APP_STATE.prev_layout().unwrap_or_else(|e| {
+                        eprintln!("Error: {e}");
+                        None
+                    });
+                    match previous_layout {
+                        Some(prev_layout) => {
+                            if curr_layout == prev_layout {
+                                imitate_keyboard_layout_change();
+                            } else {
+                                let result = change_keyboard_layout(&prev_layout);
+                                // In case of success
+                                if result.0 == 0 {
+                                    match APP_STATE.set_prev_layout(Some(curr_layout)) {
+                                        Ok(_) => {}
+                                        Err(err) => {
+                                            eprintln!("Didn't manage to set previous layout to state. Error: {}", err)
                                         }
                                     }
                                 }
                             }
-                            None => {
-                                match APP_STATE.set_prev_layout(Some(curr_layout)) {
-                                    Ok(_) => {}
-                                    Err(err) => {
-                                        eprintln!("Didn't manage to set previous layout to state. Error: {}", err)
-                                    }
+                        }
+                        None => {
+                            match APP_STATE.set_prev_layout(Some(curr_layout)) {
+                                Ok(_) => {}
+                                Err(err) => {
+                                    eprintln!(
+                                        "Didn't manage to set previous layout to state. Error: {}",
+                                        err
+                                    )
                                 }
-                                imitate_keyboard_layout_change();
                             }
+                            imitate_keyboard_layout_change();
                         }
                     }
                 }
+
                 return LRESULT(1);
             }
         }

@@ -73,10 +73,35 @@ impl AutoloadLabel {
     }
 }
 
+enum DefaultCapsLockBehaviourLabel {
+    Enabled,
+    Disabled,
+}
+
+impl DefaultCapsLockBehaviourLabel {
+    fn as_str(&self) -> String {
+        let prefix = "Default CapsLock behaviour (Shift+CapsLock):";
+
+        match self {
+            DefaultCapsLockBehaviourLabel::Enabled => format!("{} enabled", prefix),
+            DefaultCapsLockBehaviourLabel::Disabled => format!("{} disabled", prefix),
+        }
+    }
+
+    fn get_label(is_enabled: &bool) -> String {
+        if *is_enabled {
+            DefaultCapsLockBehaviourLabel::Enabled.as_str()
+        } else {
+            DefaultCapsLockBehaviourLabel::Disabled.as_str()
+        }
+    }
+}
+
 struct MenuItems {
     toggle: MenuItem,
     prev_mode: MenuItem,
     autoload: MenuItem,
+    default_capslock_behaviour: MenuItem,
     separator: PredefinedMenuItem,
     about: PredefinedMenuItem,
     quit: MenuItem,
@@ -126,12 +151,20 @@ fn get_menu_items() -> MenuItems {
         .text(ModeLabel::get_label(&APP_STATE.is_previous_mode().unwrap()))
         .enabled(true)
         .build();
-
     let menu_i_autoload: MenuItem = MenuItemBuilder::new()
         .id(MenuId::new("autoload"))
         .text(AutoloadLabel::get_label())
         .enabled(true)
         .build();
+
+    let menu_i_default_capslock_behaviour: MenuItem = MenuItemBuilder::new()
+        .id(MenuId::new("default_capslock_behaviour"))
+        .text(DefaultCapsLockBehaviourLabel::get_label(
+            &APP_STATE.is_default_capslock_behaviour_enabled().unwrap(),
+        ))
+        .enabled(true)
+        .build();
+
     let menu_i_quit: MenuItem = MenuItemBuilder::new()
         .id(MenuId::new("quit"))
         .text("Quit")
@@ -142,11 +175,11 @@ fn get_menu_items() -> MenuItems {
 
     let metadata = get_metadata();
     let menu_i_about: PredefinedMenuItem = PredefinedMenuItem::about(Some("About"), Some(metadata));
-
     let items = MenuItems {
         toggle: menu_i_toggle,
         prev_mode: menu_i_prev_mode,
         autoload: menu_i_autoload,
+        default_capslock_behaviour: menu_i_default_capslock_behaviour,
         separator,
         about: menu_i_about,
         quit: menu_i_quit,
@@ -222,6 +255,22 @@ fn quit_hander() {
     process::exit(0);
 }
 
+fn default_capslock_behaviour_handler(menu_i: &MenuItem) {
+    match APP_STATE.toggle_default_capslock_behaviour() {
+        Ok(is_enabled) => {
+            let text = DefaultCapsLockBehaviourLabel::get_label(&is_enabled);
+            menu_i.set_text(text);
+        }
+        Err(err) => {
+            eprintln!(
+                "Could not toggle default CapsLock behaviour setting: {}",
+                err
+            );
+            return;
+        }
+    }
+}
+
 pub fn create_tray() {
     thread::spawn(move || {
         let tray_menu: Menu = Menu::new();
@@ -231,6 +280,7 @@ pub fn create_tray() {
                 &menu_items.toggle,
                 &menu_items.prev_mode,
                 &menu_items.autoload,
+                &menu_items.default_capslock_behaviour,
                 &menu_items.separator,
                 &menu_items.about,
                 &menu_items.quit,
@@ -257,13 +307,15 @@ pub fn create_tray() {
                 if msg.message == WM_QUIT {
                     break;
                 }
-
                 if let Ok(event) = menu_event_rx.try_recv() {
                     match event.id.as_ref() {
                         "quit" => quit_hander(),
                         "autoload" => autoload_handler(&menu_items.autoload),
                         "mode" => mode_hander(&menu_items.prev_mode),
                         "toggle" => toggle_handler(&menu_items.toggle),
+                        "default_capslock_behaviour" => default_capslock_behaviour_handler(
+                            &menu_items.default_capslock_behaviour,
+                        ),
                         _ => {
                             println!("Menu item clicked: {:?}", event.id);
                         }
