@@ -4,6 +4,7 @@ use image::ImageReader;
 use std::{env, process, thread};
 use tray_icon::{
     menu::{
+        accelerator::{Accelerator, Code, Modifiers},
         AboutMetadata, AboutMetadataBuilder, CheckMenuItem, CheckMenuItemBuilder, Menu, MenuEvent,
         MenuId, MenuItem, MenuItemBuilder, PredefinedMenuItem,
     },
@@ -11,57 +12,13 @@ use tray_icon::{
 };
 use windows::Win32::{Foundation::HWND, UI::WindowsAndMessaging::*};
 
-enum ModeLabel {
-    Previous,
-}
-
-impl ModeLabel {
-    fn as_str(&self) -> &str {
-        match self {
-            ModeLabel::Previous => "Previous mode",
-        }
-    }
-}
-
-enum ToggleLabel {
-    Pause,
-    Resume,
-}
-
-impl ToggleLabel {
-    fn as_str(&self) -> &str {
-        match self {
-            ToggleLabel::Pause => "Pause",
-            ToggleLabel::Resume => "Resume",
-        }
-    }
-}
-
-enum AutoloadLabel {
-    Autoload,
-}
-
-impl AutoloadLabel {
-    fn as_str(&self) -> &str {
-        match self {
-            AutoloadLabel::Autoload => "Autoload",
-        }
-    }
-}
-
-enum DefaultCapsLockBehaviourLabel {
-    DefaultCapsLockBehaviour,
-}
-
-impl DefaultCapsLockBehaviourLabel {
-    fn as_str(&self) -> &str {
-        match self {
-            DefaultCapsLockBehaviourLabel::DefaultCapsLockBehaviour => {
-                "Default CapsLock behaviour (Shift+CapsLock)"
-            }
-        }
-    }
-}
+const MODE_PREVIOUS: &str = "Previous mode";
+const TOGGLE_PAUSE: &str = "Pause";
+const TOGGLE_RESUME: &str = "Resume";
+const DEFAULT_CAPSLOCK_BEHAVIOUR: &str = "Default CapsLock behaviour";
+const AUTOLOAD: &str = "Autoload";
+const QUIT: &str = "Quit";
+const ABOUT: &str = "About";
 
 struct MenuItems {
     toggle: MenuItem,
@@ -110,45 +67,58 @@ fn get_metadata() -> AboutMetadata {
 fn get_menu_items() -> MenuItems {
     let menu_i_toggle: MenuItem = MenuItemBuilder::new()
         .id(MenuId::new("toggle"))
-        .text(ToggleLabel::Pause.as_str())
+        .text(TOGGLE_PAUSE)
         .enabled(true)
         .build();
+
     let top_separator = PredefinedMenuItem::separator();
+
     let menu_i_prev_mode: CheckMenuItem = CheckMenuItemBuilder::new()
         .id(MenuId::new("mode"))
-        .text(ModeLabel::Previous.as_str())
+        .text(MODE_PREVIOUS)
         .checked(APP_STATE.is_previous_mode().unwrap())
         .enabled(true)
         .build();
     let menu_i_default_capslock_behaviour: CheckMenuItem = CheckMenuItemBuilder::new()
         .id(MenuId::new("default_capslock_behaviour"))
-        .text(DefaultCapsLockBehaviourLabel::DefaultCapsLockBehaviour.as_str())
+        .text(DEFAULT_CAPSLOCK_BEHAVIOUR)
         .checked(APP_STATE.is_default_capslock_behaviour_enabled().unwrap())
         .enabled(true)
         .build();
+    menu_i_default_capslock_behaviour
+        .set_accelerator(Some(Accelerator::new(
+            Some(Modifiers::SHIFT),
+            Code::CapsLock,
+        )))
+        .unwrap_or_else(|e| {
+            eprintln!(
+                "Failed to set accelerator for default CapsLock behaviour tray menu item: {}",
+                e
+            )
+        });
     let menu_i_autoload: CheckMenuItem = CheckMenuItemBuilder::new()
         .id(MenuId::new("autoload"))
-        .text(AutoloadLabel::Autoload.as_str())
+        .text(AUTOLOAD)
         .checked(is_autoload_enabled())
         .enabled(true)
         .build();
 
     let menu_i_quit: MenuItem = MenuItemBuilder::new()
         .id(MenuId::new("quit"))
-        .text("Quit")
+        .text(QUIT)
         .enabled(true)
         .build();
 
     let bottom_separator = PredefinedMenuItem::separator();
 
     let metadata = get_metadata();
-    let menu_i_about: PredefinedMenuItem = PredefinedMenuItem::about(Some("About"), Some(metadata));
+    let menu_i_about: PredefinedMenuItem = PredefinedMenuItem::about(Some(ABOUT), Some(metadata));
     let items = MenuItems {
         toggle: menu_i_toggle,
         top_separator,
         prev_mode: menu_i_prev_mode,
-        autoload: menu_i_autoload,
         default_capslock_behaviour: menu_i_default_capslock_behaviour,
+        autoload: menu_i_autoload,
         bottom_separator,
         about: menu_i_about,
         quit: menu_i_quit,
@@ -205,9 +175,9 @@ fn toggle_handler(menu_i: &MenuItem) {
     match APP_STATE.toggle_pause() {
         Ok(is_paused) => {
             let text = if is_paused {
-                ToggleLabel::Resume.as_str()
+                TOGGLE_RESUME
             } else {
-                ToggleLabel::Pause.as_str()
+                TOGGLE_PAUSE
             };
             menu_i.set_text(text);
         }
@@ -247,8 +217,8 @@ pub fn create_tray() {
                 &menu_items.toggle,
                 &menu_items.top_separator,
                 &menu_items.prev_mode,
-                &menu_items.autoload,
                 &menu_items.default_capslock_behaviour,
+                &menu_items.autoload,
                 &menu_items.bottom_separator,
                 &menu_items.about,
                 &menu_items.quit,
